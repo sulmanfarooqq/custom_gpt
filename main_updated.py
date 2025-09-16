@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-import re
 import time
 from pathlib import Path
-import google.generativeai as genai
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 import colorama
 from pwinput import pwinput
 import PyPDF2
@@ -16,6 +14,8 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
 from rich.live import Live
+import requests
+import json
 
 # Initialize Colorama for cross-platform colored output
 colorama.init(autoreset=True)
@@ -24,33 +24,92 @@ colorama.init(autoreset=True)
 console = Console()
 
 # --- Configuration ---
-API_PROVIDER = "gemini"
-MODEL_NAME = "gemini-1.5-flash"
-API_KEY_NAME = "GEMINI_API_KEY"
+API_PROVIDER = "mistral"
+MODEL_NAME = "mistral-small-latest"
+API_KEY_NAME = "API_KEY"
+BASE_URL = "https://api.mistral.ai/v1"
 ENV_FILE = ".env"
 
-# UI Colors
+# UI Colors (Rich-compatible styles)
 class colors:
-    TITLE = colorama.Fore.CYAN + colorama.Style.BRIGHT
-    PROMPT_BORDER = colorama.Fore.YELLOW
-    PROMPT_TEXT = colorama.Fore.WHITE + colorama.Style.BRIGHT
-    ASSISTANT_BORDER = colorama.Fore.CYAN
-    ASSISTANT_TEXT = colorama.Fore.LIGHTBLUE_EX
-    INFO_BORDER = colorama.Fore.GREEN
-    WARNING_BORDER = colorama.Fore.YELLOW
-    ERROR_BORDER = colorama.Fore.RED
-    SYSTEM_TEXT = colorama.Fore.MAGENTA
-    RESET = colorama.Style.RESET_ALL
+    TITLE = "cyan bold"
+    PROMPT_BORDER = "yellow"
+    PROMPT_TEXT = "white bold"
+    ASSISTANT_BORDER = "cyan"
+    ASSISTANT_TEXT = "bright_blue"
+    INFO_BORDER = "green"
+    WARNING_BORDER = "yellow"
+    ERROR_BORDER = "red"
+    SYSTEM_TEXT = "magenta"
+    RESET = ""
 
-# ASCII Banner for Custom GPT
-banner_text = Text("""
-  ██████╗██╗   ██╗███████╗████████╗ ██████╗ ███╗   ███╗    ██████╗ ██████╗ ████████╗
- ██╔════╝██║   ██║██╔════╝╚══██╔══╝██╔═══██╗████╗ ████║   ██╔════╝ ██═══██╗╚══██╔══╝
-██║     ███████║███████╗   ██║   ██║   ██║██╔████╔██║   ██║  ███╗██████╔╝   ██║   
-██║     ██╔══██║╚════██║   ██║   ██║   ██║██║╚██╔╝██║   ██║   ██║██╔════╝   ██║   
-╚██████╗██║  ██║███████║   ██║   ╚██████╔╝██║ ╚═╝ ██║   ╚██████╔╝██║        ██║   
- ╚═════╝╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝     ╚═╝    ╚═════╝ ╚═╝        ╚═╝   
-""", style="bold cyan")
+# Mistral AI Client
+class MistralAI:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.base_url = BASE_URL
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+
+    def chat_completion(self, messages, model=MODEL_NAME, temperature=0.7, max_tokens=1000):
+        """
+        Send a chat completion request to Mistral AI API
+        
+        Args:
+            messages (list): List of message dictionaries with 'role' and 'content'
+            model (str): Model to use (default: mistral-small-latest)
+            temperature (float): Controls randomness (0.0 to 1.0)
+            max_tokens (int): Maximum number of tokens to generate
+            
+        Returns:
+            dict: API response
+        """
+        endpoint = f"{self.base_url}/chat/completions"
+        
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+            "top_p": 1.0
+        }
+        
+        try:
+            response = requests.post(endpoint, headers=self.headers, json=payload)
+            if response.status_code == 401:
+                console.print("[red]Authentication Error: Please check your API key[/red]")
+                console.print(f"[red]Response: {response.text}[/red]")
+                return None
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            console.print(f"[red]Error making API request: {e}[/red]")
+            if hasattr(e, 'response') and e.response is not None:
+                console.print(f"[red]Response text: {e.response.text}[/red]")
+            return None
+
+    def list_models(self):
+        """
+        Get list of available models
+        
+        Returns:
+            dict: API response with available models
+        """
+        endpoint = f"{self.base_url}/models"
+        
+        try:
+            response = requests.get(endpoint, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            console.print(f"[red]Error fetching models: {e}[/red]")
+            if hasattr(e, 'response') and e.response is not None:
+                console.print(f"[red]Response text: {e.response.text}[/red]")
+            return None
 
 # --- File Processing Functions ---
 def extract_text_from_pdf(file_path):
@@ -203,8 +262,10 @@ class UI:
 
     def display_banner(self):
         self.clear_screen()
+        # Simple Banner for Custom GPT (Unicode issues on Windows)
+        banner_text = Text("CUSTOM GPT CHATBOT\nWith Knowledge Base Integration", style="bold cyan")
         self.console.print(banner_text, justify="center")
-        self.console.rule("[bold green]◈[/bold green]" * 3, style="green")
+        self.console.rule("[bold green]*[/bold green]" * 3, style="green")
         info_line = Text("Custom GPT Chatbot with Knowledge Base", style="green")
         self.console.print(info_line, justify="center")
         self.console.print()
@@ -230,25 +291,17 @@ class UI:
 
     def get_input(self, prompt: str) -> str:
         """Gets user input with a styled prompt."""
-        return self.console.input(f"[bold yellow]╚═>[/bold yellow] [bold white]{prompt}:[/bold white] ")
+        return self.console.input(f"[bold yellow]=>[/bold yellow] [bold white]{prompt}:[/bold white] ")
 
-    def display_markdown_message(self, title: str, content_stream):
+    def display_markdown_message(self, title: str, content: str):
         """
-        Displays a 'typing' animation while collecting a stream, then renders it as Markdown.
+        Displays content as Markdown.
         """
         panel_title = f"[bold cyan]{title}[/bold cyan]"
         
-        # The Live context will manage the "is typing" animation, then disappear
-        with Live(console=self.console, refresh_per_second=10, transient=True) as live:
-            live.update(Panel(Text(f"{title} is typing..."), title=panel_title, border_style="dim cyan"))
-            
-            # Collect the full response from the generator stream
-            full_response_md = "".join(list(content_stream))
-
-        # After the Live context is finished, render the final, complete Markdown content
-        if full_response_md:
+        if content:
             markdown_content = Markdown(
-                full_response_md.strip(),
+                content.strip(),
                 style="bright_blue"  # Base style for text outside markdown elements
             )
             self.console.print(Panel(markdown_content, title=panel_title, border_style="cyan"))
@@ -263,17 +316,17 @@ class LLMClient:
     def __init__(self, api_key: str, ui: UI):
         self.ui = ui
         self.documents = load_knowledge_base()
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name=MODEL_NAME)
-        self.chat = self.model.start_chat(history=[])
-        
+        self.client = MistralAI(api_key)
+        self.model = MODEL_NAME
+        self.messages = []
+
         # Load custom prompt template
         self.custom_prompt = self.load_custom_prompt()
-        
+
         # Send initial context as first message
         if self.documents:
             context_summary = f"Knowledge base loaded with {len(self.documents)} document chunks."
-            self.chat.send_message(f"System: {context_summary}")
+            self.messages.append({"role": "system", "content": context_summary})
 
     def load_custom_prompt(self):
         """Load the custom prompt template from file"""
@@ -285,35 +338,57 @@ class LLMClient:
             return "You are a helpful AI assistant. Answer the user's question: {question}"
 
     def clear_history(self):
-        self.chat = self.model.start_chat(history=[])
+        self.messages = []
         # Reload documents and send context again
         self.documents = load_knowledge_base()
         if self.documents:
             context_summary = f"Knowledge base loaded with {len(self.documents)} document chunks."
-            self.chat.send_message(f"System: {context_summary}")
+            self.messages.append({"role": "system", "content": context_summary})
         self.ui.display_message("System", "New chat session started.", colors.INFO_BORDER)
 
     def get_relevant_context_for_question(self, question):
         """Get relevant context from knowledge base for a specific question"""
         return get_relevant_context(self.documents, question)
 
-    def get_streamed_response(self, user_prompt: str):
+    def get_response(self, user_prompt: str):
         try:
             # Get relevant context for the question
             context = self.get_relevant_context_for_question(user_prompt)
-            
-            # Format the prompt with context
+
+            # Format the prompt with context using the custom prompt template
             if context and context != "No relevant context found.":
-                formatted_prompt = f"Context information:\n{context}\n\nUser question:\n{user_prompt}"
+                formatted_prompt = self.custom_prompt.format(context=context, question=user_prompt)
             else:
-                formatted_prompt = user_prompt
-            
-            response = self.chat.send_message(formatted_prompt, stream=True)
-            for chunk in response:
-                if chunk.text:
-                    yield chunk.text
+                # If no context found, just use the user question with a simplified prompt
+                formatted_prompt = f"You are a helpful AI assistant. Answer the user's question: {user_prompt}"
+
+            # Append user message to messages
+            self.messages.append({"role": "user", "content": formatted_prompt})
+
+            # Call Mistral AI chat completions
+            response = self.client.chat_completion(
+                messages=self.messages,
+                model=self.model,
+                temperature=0.7,
+                max_tokens=1000
+            )
+
+            # Process the response
+            if response and 'choices' in response:
+                # Extract the AI's response
+                ai_message = response['choices'][0]['message']['content']
+                
+                # Append assistant message to messages
+                self.messages.append({"role": "assistant", "content": ai_message})
+                
+                return ai_message
+            else:
+                return "Error: Could not get a response from the AI."
+
         except Exception as e:
-            self.ui.display_message("API Error", f"An unexpected error occurred:\n{str(e)}", colors.ERROR_BORDER)
+            error_msg = f"An unexpected error occurred:\n{str(e)}"
+            self.ui.display_message("API Error", error_msg, colors.ERROR_BORDER)
+            return error_msg
 
 # --- Main Application Class ---
 class ChatApp:
@@ -337,26 +412,38 @@ class ChatApp:
             self.ui.console.print("[magenta]Verifying API key...[/magenta]")
             self.llm_client = LLMClient(api_key, self.ui)
             # Test API call
-            genai.list_models()
-            self.ui.console.print("[green]API key verified.[/green]")
+            models = self.llm_client.client.list_models()
+            if models:
+                self.ui.console.print("[green]API key verified.[/green]")
+            else:
+                self.ui.console.print("[red]API key verification failed.[/red]")
+                return False
             time.sleep(1.5)
             return True
         except Exception as e:
-            self.ui.display_message("Error", f"Failed to initialize API client: {e}", "red")
+            error_msg = f"Failed to initialize API client: {str(e)}"
+            if "401" in str(e):
+                error_msg += "\n\nThis usually means your API key is invalid. Please check your API key in the .env file."
+            elif "Connection" in str(e) or "Failed" in str(e):
+                error_msg += "\n\nThis might be a network connectivity issue. Please check your internet connection."
+            self.ui.display_message("Error", error_msg, "red")
             return False
 
     def _configure_key(self) -> bool:
         self.ui.clear_screen()
         self.ui.display_banner()
-        self.ui.display_message("API Key Configuration", "Enter your Gemini API key (it starts with `AIza...`).", "green")
+        self.ui.display_message("API Key Configuration", "Enter your Mistral API key.", "green")
         # pwinput needs standard colorama codes for its prompt
-        api_key = pwinput(prompt=f"{colorama.Fore.YELLOW}╚═> {colorama.Fore.WHITE}Paste key: {colorama.Style.RESET_ALL}", mask='*')
+        api_key = pwinput(prompt=f"{colorama.Fore.YELLOW}=> {colorama.Fore.WHITE}Paste key: {colorama.Style.RESET_ALL}", mask='*')
 
         if not api_key:
             self.ui.display_message("Error", "No API key entered.", "red")
             return False
 
-        set_key(ENV_FILE, API_KEY_NAME, api_key)
+        # Write to .env file
+        with open(ENV_FILE, 'w') as f:
+            f.write(f"API_KEY={api_key}")
+        
         self.ui.display_message("Success", f"API key saved to {ENV_FILE}. Please restart the application.", "green")
         return True
 
@@ -367,6 +454,15 @@ class ChatApp:
 
         self.ui.clear_screen()
         self.ui.display_message("System", "Custom GPT is online. Type '/help' for commands.", "magenta")
+        
+        # Initialize conversation history
+        conversation_history = [
+            {"role": "system", "content": "You are a helpful AI assistant."}
+        ]
+        
+        # Add any context from knowledge base
+        if self.llm_client.messages:
+            conversation_history.extend(self.llm_client.messages[1:])  # Skip the system message we already added
 
         while True:
             prompt = self.ui.get_input("\nYou")
@@ -376,14 +472,30 @@ class ChatApp:
             elif prompt.lower() == '/new':
                 self.ui.clear_screen()
                 self.llm_client.clear_history()
+                # Reset conversation history
+                conversation_history = [
+                    {"role": "system", "content": "You are a helpful AI assistant."}
+                ]
+                # Add any context from knowledge base
+                if self.llm_client.messages:
+                    conversation_history.extend(self.llm_client.messages[1:])
                 continue
             elif prompt.lower() == '/help':
                 self.ui.display_message("Help", "Commands:\n  /new  - Start a new conversation\n  /exit - Exit the chat", "magenta")
                 continue
             
-            # Pass the stream generator directly to the UI method
-            stream = self.llm_client.get_streamed_response(prompt)
-            self.ui.display_markdown_message("Custom GPT", stream)
+            # Add user message to conversation history
+            conversation_history.append({"role": "user", "content": prompt})
+            
+            # Get response from AI
+            self.ui.console.print("\n[blue]AI is thinking...[/blue]")
+            response = self.llm_client.get_response(prompt)
+            
+            # Display the response
+            self.ui.display_markdown_message("Custom GPT", response)
+            
+            # Add AI's response to conversation history
+            conversation_history.append({"role": "assistant", "content": response})
 
     def _about_us(self):
         self.ui.display_banner()
