@@ -1,6 +1,6 @@
 # Custom GPT Chatbot
 
-A beautiful CLI-based chatbot powered by Google's Gemini API with a knowledge base of documents.
+A beautiful CLI-based chatbot powered by Mistral AI's API with a knowledge base of documents.
 
 ## Features
 
@@ -19,11 +19,11 @@ A beautiful CLI-based chatbot powered by Google's Gemini API with a knowledge ba
    pip install -r requirements.txt
    ```
 
-2. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/)
+2. Get a Mistral AI API key from [Mistral AI Platform](https://console.mistral.ai/)
 
 3. Run the chatbot:
    ```bash
-   python main.py
+   python main_updated.py
    ```
 
 4. Use the menu to configure your API key
@@ -33,7 +33,7 @@ A beautiful CLI-based chatbot powered by Google's Gemini API with a knowledge ba
 1. Place your documents in the `knowledge` folder
 2. Run the chatbot:
    ```bash
-   python main.py
+   python main_updated.py
    ```
 
 3. Select option 1 to start chatting
@@ -57,12 +57,13 @@ While chatting, you can use these commands:
 ## Customization
 
 - Edit `prompt.txt` to change the AI's behavior and personality
-- Modify `main.py` to adjust the retrieval logic or add new features
+- Modify `main_updated.py` to adjust the retrieval logic or add new features
 - Add more document processing functions for additional file types
 
 ## Troubleshooting
 
-If you encounter the "models/gemini-pro is not found" error:
-1. Ensure you're using a recent version of the `google-generativeai` package
-2. Check that your API key is valid and properly configured
-3. The application now uses `gemini-1.5-flash` which is more widely available
+If you encounter connection issues:
+1. Ensure you're using a valid Mistral AI API key
+2. Check that your API key is properly configured in the .env file
+3. Verify you have internet connectivity
+4. Make sure you're using `main_updated.py` which uses the working Mistral AI implementation

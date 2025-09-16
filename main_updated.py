@@ -335,7 +335,7 @@ class LLMClient:
                 return f.read()
         except FileNotFoundError:
             console.print("[yellow]Warning: prompt.txt not found, using default prompt[/yellow]")
-            return "You are a helpful AI assistant. Answer the user's question: {question}"
+            return "You are a helpful AI assistant. Use the following context to answer the user's question.\n\nContext information:\n{context}\n\nUser question:\n{question}"
 
     def clear_history(self):
         self.messages = []
@@ -360,7 +360,7 @@ class LLMClient:
                 formatted_prompt = self.custom_prompt.format(context=context, question=user_prompt)
             else:
                 # If no context found, just use the user question with a simplified prompt
-                formatted_prompt = f"You are a helpful AI assistant. Answer the user's question: {user_prompt}"
+                formatted_prompt = f"You are a sulmans personel assistant. Answer the user's question: {user_prompt}"
 
             # Append user message to messages
             self.messages.append({"role": "user", "content": formatted_prompt})
@@ -457,7 +457,7 @@ class ChatApp:
         
         # Initialize conversation history
         conversation_history = [
-            {"role": "system", "content": "You are a helpful AI assistant."}
+            {"role": "system", "content": "You are a sulmans AI assistant."}
         ]
         
         # Add any context from knowledge base
